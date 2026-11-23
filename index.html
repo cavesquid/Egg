@@ -1,0 +1,233 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Egg Timer</title>
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body {
+    min-height: 100vh;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: 24px;
+    font-family: system-ui, -apple-system, sans-serif;
+    background: linear-gradient(160deg, #1a1a2e, #16213e);
+    color: #fff;
+  }
+  h1 { font-size: 1.5rem; font-weight: 600; opacity: 0.9; }
+  .dial { position: relative; width: 260px; height: 260px; }
+  svg { transform: rotate(-90deg); }
+  .track { fill: none; stroke: #2a2a4a; stroke-width: 14; }
+  .progress {
+    fill: none;
+    stroke: url(#grad);
+    stroke-width: 14;
+    stroke-linecap: round;
+    transition: stroke-dashoffset 0.3s linear;
+  }
+  .time-display {
+    position: absolute;
+    inset: 0;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: 2px;
+  }
+  #time { font-size: 3rem; font-weight: 700; font-variant-numeric: tabular-nums; }
+  #label { font-size: 0.9rem; opacity: 0.7; }
+  .presets { display: flex; gap: 10px; flex-wrap: wrap; justify-content: center; }
+  .presets button, .controls button {
+    border: none;
+    border-radius: 10px;
+    padding: 10px 18px;
+    font-size: 0.95rem;
+    font-weight: 600;
+    cursor: pointer;
+    transition: transform 0.1s, box-shadow 0.2s;
+  }
+  .presets button:hover, .controls button:hover { transform: translateY(-2px); }
+  .presets button {
+    background: #2a2a4a;
+    color: #fff;
+  }
+  .presets button.active {
+    background: linear-gradient(135deg, #f59e0b, #ef4444);
+  }
+  .controls { display: flex; gap: 10px; }
+  .controls button {
+    min-width: 100px;
+    background: #fff;
+    color: #16213e;
+  }
+  #stop { background: #ef4444; color: #fff; display: none; }
+</style>
+</head>
+<body>
+<h1>🥚 Egg Timer</h1>
+
+<div class="dial">
+  <svg width="260" height="260" viewBox="0 0 260 260">
+    <defs>
+      <linearGradient id="grad" x1="0%" y1="0%" x2="100%" y2="100%">
+        <stop offset="0%" stop-color="#f59e0b"/>
+        <stop offset="100%" stop-color="#ef4444"/>
+      </linearGradient>
+    </defs>
+    <circle class="track" cx="130" cy="130" r="116"/>
+    <circle class="progress" id="progress" cx="130" cy="130" r="116"/>
+  </svg>
+  <div class="time-display">
+    <div id="time">6:00</div>
+    <div id="label">Soft boiled</div>
+  </div>
+</div>
+
+<div class="presets" id="presets"></div>
+
+<div class="controls">
+  <button id="start">Start</button>
+  <button id="stop">Reset</button>
+</div>
+
+<script>
+(function () {
+  "use strict";
+
+  var PRESETS = [
+    { label: "Soft", minutes: 6, note: "Soft boiled" },
+    { label: "Medium", minutes: 8, note: "Medium boiled" },
+    { label: "Hard", minutes: 10, note: "Hard boiled" },
+  ];
+
+  var RADIUS = 116;
+  var CIRCUMFERENCE = 2 * Math.PI * RADIUS;
+
+  var totalMs = PRESETS[0].minutes * 60000;
+  var remainingMs = totalMs;
+  var endTime = null;
+  var timerId = null;
+  var finished = false;
+
+  var progressEl = document.getElementById("progress");
+  var timeEl = document.getElementById("time");
+  var labelEl = document.getElementById("label");
+  var presetsEl = document.getElementById("presets");
+  var startBtn = document.getElementById("start");
+  var stopBtn = document.getElementById("stop");
+
+  progressEl.style.strokeDasharray = CIRCUMFERENCE;
+
+  function fmt(ms) {
+    var s = Math.max(0, Math.ceil(ms / 1000));
+    var m = Math.floor(s / 60);
+    s = s % 60;
+    return m + ":" + (s < 10 ? "0" + s : s);
+  }
+
+  function draw() {
+    var frac = totalMs > 0 ? remainingMs / totalMs : 0;
+    progressEl.style.strokeDashoffset = CIRCUMFERENCE * (1 - frac);
+    timeEl.textContent = fmt(remainingMs);
+  }
+
+  function clearPresetActive() {
+    Array.prototype.forEach.call(presetsEl.children, function (b) {
+      b.classList.remove("active");
+    });
+  }
+
+  PRESETS.forEach(function (p, i) {
+    var btn = document.createElement("button");
+    btn.textContent = p.label + " · " + p.minutes + " min";
+    if (i === 0) btn.classList.add("active");
+    btn.addEventListener("click", function () {
+      if (timerId !== null) stop();
+      finished = false;
+      totalMs = p.minutes * 60000;
+      remainingMs = totalMs;
+      labelEl.textContent = p.note;
+      clearPresetActive();
+      btn.classList.add("active");
+      draw();
+    });
+    presetsEl.appendChild(btn);
+  });
+
+  function beep() {
+    try {
+      var ctx = new (window.AudioContext || window.webkitAudioContext)();
+      var t = ctx.currentTime;
+      [0, 0.25, 0.5].forEach(function (offset) {
+        var osc = ctx.createOscillator();
+        var gain = ctx.createGain();
+        osc.type = "sine";
+        osc.frequency.value = 880;
+        gain.gain.setValueAtTime(0.0001, t + offset);
+        gain.gain.exponentialRampToValueAtTime(0.3, t + offset + 0.02);
+        gain.gain.exponentialRampToValueAtTime(0.0001, t + offset + 0.2);
+        osc.connect(gain).connect(ctx.destination);
+        osc.start(t + offset);
+        osc.stop(t + offset + 0.22);
+      });
+    } catch (e) {
+      /* Web Audio unavailable; visual alert still works */
+    }
+  }
+
+  function tick() {
+    remainingMs = Math.max(0, endTime - Date.now());
+    if (remainingMs <= 0) {
+      remainingMs = 0;
+      draw();
+      stop();
+      finished = true;
+      labelEl.textContent = "Your egg is ready! 🥚";
+      document.title = "🥚 Egg ready!";
+      beep();
+      return;
+    }
+    draw();
+  }
+
+  function start() {
+    if (timerId !== null || finished) return;
+    endTime = Date.now() + remainingMs;
+    timerId = setInterval(tick, 200);
+    startBtn.style.display = "none";
+    stopBtn.style.display = "inline-block";
+    document.title = "🥚 " + fmt(remainingMs);
+  }
+
+  function stop() {
+    if (timerId !== null) {
+      clearInterval(timerId);
+      timerId = null;
+    }
+    startBtn.style.display = "inline-block";
+    stopBtn.style.display = "none";
+    document.title = "🥚 Egg Timer";
+  }
+
+  function reset() {
+    stop();
+    finished = false;
+    remainingMs = totalMs;
+    labelEl.textContent = PRESETS.reduce(function (acc, p) {
+      if (p.minutes * 60000 === totalMs) return p.note;
+      return acc;
+    }, PRESETS[0].note);
+    draw();
+  }
+
+  startBtn.addEventListener("click", start);
+  stopBtn.addEventListener("click", reset);
+
+  draw();
+})();
+</script>
+</body>
+</html>
